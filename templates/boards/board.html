@@ -1,0 +1,523 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ project.name }} - Kanban Board | TaskFlow{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+    <!-- Board Sub-header -->
+    <div class="bg-white border-b border-slate-200 px-6 py-3 flex flex-wrap items-center justify-between gap-4 shrink-0 shadow-xs z-10">
+        <div class="flex items-center space-x-4">
+            <a href="{% url 'project_list' %}" class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition" title="Back to Projects">
+                <i data-lucide="arrow-left" class="w-5 h-5"></i>
+            </a>
+            <div>
+                <div class="flex items-center space-x-3">
+                    <h1 class="text-xl font-bold text-slate-900 tracking-tight">{{ project.name }}</h1>
+                    <span class="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                        {{ project.tasks.count }} total tasks
+                    </span>
+                </div>
+                {% if project.description %}
+                    <p class="text-xs text-slate-500 line-clamp-1 max-w-lg">{{ project.description }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Actions & Team Members -->
+        <div class="flex items-center space-x-3">
+            <!-- Members avatars -->
+            <div class="flex items-center -space-x-1.5 overflow-hidden">
+                <div class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-indigo-600 text-white text-[11px] font-bold border-2 border-white ring-1 ring-slate-200" title="Owner: {{ project.owner.username }}">
+                    {{ project.owner.username|slice:":1"|upper }}
+                </div>
+                {% for member in project.members.all %}
+                <div class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-600 text-white text-[11px] font-bold border-2 border-white ring-1 ring-slate-200" title="Member: {{ member.username }}">
+                    {{ member.username|slice:":1"|upper }}
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if project.owner == user %}
+            <button onclick="document.getElementById('addMemberModal').classList.remove('hidden')" 
+                    class="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-dashed border-slate-300 rounded-lg text-xs font-medium flex items-center space-x-1" title="Add Team Member">
+                <i data-lucide="user-plus" class="w-4 h-4"></i>
+            </button>
+            {% endif %}
+
+            <div class="h-5 w-px bg-slate-200"></div>
+
+            <!-- Activity Log Toggle -->
+            <button onclick="toggleActivityDrawer()" class="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center space-x-1.5 transition">
+                <i data-lucide="history" class="w-4 h-4 text-slate-500"></i>
+                <span class="hidden sm:inline">Activity</span>
+            </button>
+
+            <!-- Add Column Button -->
+            <button onclick="document.getElementById('addColumnModal').classList.remove('hidden')" 
+                    class="px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center space-x-1.5 transition">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Add Column</span>
+            </button>
+
+            <!-- New Task Button -->
+            <button onclick="openCreateTaskModal()" 
+                    class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs shadow-indigo-200 flex items-center space-x-1.5 transition">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>New Task</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Kanban Columns Area -->
+    <div class="flex-1 overflow-x-auto p-6 bg-slate-100">
+        <div class="flex items-start space-x-5 h-full">
+            {% for col in columns %}
+            <div class="w-80 shrink-0 flex flex-col max-h-full bg-slate-200/70 border border-slate-300/80 rounded-xl overflow-hidden shadow-xs">
+                <!-- Column Header -->
+                <div class="p-3 bg-white border-b border-slate-200 flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full 
+                            {% if col.color == 'blue' %} bg-sky-500
+                            {% elif col.color == 'amber' %} bg-amber-500
+                            {% elif col.color == 'emerald' %} bg-emerald-500
+                            {% elif col.color == 'rose' %} bg-rose-500
+                            {% elif col.color == 'purple' %} bg-purple-500
+                            {% else %} bg-slate-400 {% endif %}"></span>
+                        <h2 class="font-bold text-sm text-slate-800">{{ col.name }}</h2>
+                        <span id="col-count-{{ col.id }}" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                            {{ col.tasks.count }}
+                        </span>
+                    </div>
+
+                    <div class="flex items-center space-x-1">
+                        <button onclick="openCreateTaskModal('{{ col.id }}')" class="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded" title="Add task to this column">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                        </button>
+                        {% if project.owner == user and columns.count > 1 %}
+                        <form method="post" action="{% url 'column_delete' col.id %}" onsubmit="return confirm('Delete column \'{{ col.name }}\' and all its tasks?');">
+                            {% csrf_token %}
+                            <button type="submit" class="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded" title="Delete column">
+                                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Draggable Task List Container -->
+                <div class="kanban-tasks-list flex-1 p-2 space-y-2.5 overflow-y-auto min-h-[120px]" data-column-id="{{ col.id }}">
+                    {% for task in col.tasks.all %}
+                    <div class="task-card bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs hover:shadow-md transition cursor-grab active:cursor-grabbing group relative" 
+                         data-task-id="{{ task.id }}"
+                         onclick="openTaskDetailModal('{{ task.id }}')">
+                        
+                        <!-- Priority Badge & Actions -->
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full
+                                {% if task.priority == 'urgent' %} bg-rose-100 text-rose-700 border border-rose-200
+                                {% elif task.priority == 'high' %} bg-amber-100 text-amber-700 border border-amber-200
+                                {% elif task.priority == 'medium' %} bg-blue-100 text-blue-700 border border-blue-200
+                                {% else %} bg-slate-100 text-slate-600 border border-slate-200 {% endif %}">
+                                {{ task.get_priority_display }}
+                            </span>
+
+                            <div class="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition" onclick="event.stopPropagation()">
+                                <form method="post" action="{% url 'task_delete' task.id %}" onsubmit="return confirm('Delete task \'{{ task.title }}\'?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="p-1 text-slate-400 hover:text-rose-600 rounded">
+                                        <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Title -->
+                        <h4 class="text-sm font-semibold text-slate-900 group-hover:text-indigo-600 transition leading-snug">
+                            {{ task.title }}
+                        </h4>
+
+                        {% if task.description %}
+                        <p class="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">
+                            {{ task.description }}
+                        </p>
+                        {% endif %}
+
+                        <!-- Card Footer: Due Date, Assignee, Comments -->
+                        <div class="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                            <div class="flex items-center space-x-2">
+                                {% if task.due_date %}
+                                <span class="flex items-center space-x-1 text-[11px] font-medium text-slate-500">
+                                    <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-400"></i>
+                                    <span>{{ task.due_date|date:"M d" }}</span>
+                                </span>
+                                {% endif %}
+
+                                {% if task.comments.count > 0 %}
+                                <span class="flex items-center space-x-0.5 text-[11px] font-medium text-slate-500">
+                                    <i data-lucide="message-square" class="w-3.5 h-3.5 text-slate-400"></i>
+                                    <span>{{ task.comments.count }}</span>
+                                </span>
+                                {% endif %}
+                            </div>
+
+                            <!-- Assignee Avatar -->
+                            <div>
+                                {% if task.assignee %}
+                                <div class="w-5 h-5 rounded-full bg-slate-700 text-white text-[10px] font-bold flex items-center justify-center uppercase" title="Assigned to: {{ task.assignee.username }}">
+                                    {{ task.assignee.username|slice:":1" }}
+                                </div>
+                                {% else %}
+                                <i data-lucide="user-x" class="w-4 h-4 text-slate-300" title="Unassigned"></i>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Quick Add Card trigger -->
+                <div class="p-2 border-t border-slate-200/60 bg-slate-100/60">
+                    <button onclick="openCreateTaskModal('{{ col.id }}')" 
+                            class="w-full py-1.5 px-2 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 flex items-center justify-center space-x-1.5 transition">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                        <span>Add Task</span>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+
+            <!-- Add Column Card -->
+            <button onclick="document.getElementById('addColumnModal').classList.remove('hidden')" 
+                    class="w-72 shrink-0 h-28 border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/40 rounded-xl flex flex-col items-center justify-center text-slate-500 hover:text-indigo-600 transition">
+                <i data-lucide="plus-circle" class="w-6 h-6 mb-1"></i>
+                <span class="text-xs font-semibold">+ Add Another Column</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ================= MODALS & DRAWERS ================= -->
+
+<!-- Create Task Modal -->
+<div id="createTaskModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden transform transition-all">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="text-lg font-bold text-slate-900">Create Task</h3>
+            <button onclick="document.getElementById('createTaskModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <form method="post" action="{% url 'task_create' project.id %}" class="p-6 space-y-4">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Title</label>
+                {{ task_form.title }}
+            </div>
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Description</label>
+                {{ task_form.description }}
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Column / Stage</label>
+                    {{ task_form.column }}
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Priority</label>
+                    {{ task_form.priority }}
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Assignee</label>
+                    {{ task_form.assignee }}
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Due Date</label>
+                    {{ task_form.due_date }}
+                </div>
+            </div>
+            <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
+                <button type="button" onclick="document.getElementById('createTaskModal').classList.add('hidden')" 
+                        class="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50 font-medium">Cancel</button>
+                <button type="submit" 
+                        class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-sm transition">Create Task</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Task Detail & Comment Modal -->
+<div id="taskDetailModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <span id="modalTaskPriority" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full"></span>
+                <span id="modalTaskColumn" class="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium"></span>
+            </div>
+            <button onclick="document.getElementById('taskDetailModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-6">
+            <h2 id="modalTaskTitle" class="text-xl font-bold text-slate-900"></h2>
+            
+            <div class="flex items-center space-x-6 text-xs text-slate-500 mt-2 pb-4 border-b border-slate-100">
+                <div>Assignee: <span id="modalTaskAssignee" class="font-semibold text-slate-800"></span></div>
+                <div>Due: <span id="modalTaskDueDate" class="font-semibold text-slate-800"></span></div>
+                <div>Created: <span id="modalTaskCreated" class="font-semibold text-slate-800"></span></div>
+            </div>
+
+            <!-- Description -->
+            <div class="my-4">
+                <h4 class="text-xs font-semibold uppercase text-slate-500 mb-1">Description</h4>
+                <div id="modalTaskDesc" class="p-3 bg-slate-50 rounded-lg text-sm text-slate-700 min-h-[60px] whitespace-pre-wrap"></div>
+            </div>
+
+            <!-- Comments Section -->
+            <div class="mt-6 pt-4 border-t border-slate-100">
+                <h4 class="text-sm font-bold text-slate-800 mb-3 flex items-center space-x-1.5">
+                    <i data-lucide="messages-square" class="w-4 h-4 text-indigo-600"></i>
+                    <span>Discussion & Updates</span>
+                </h4>
+
+                <div id="modalCommentsList" class="space-y-3 max-h-52 overflow-y-auto pr-2 mb-4">
+                    <!-- Populated dynamically -->
+                </div>
+
+                <!-- Add Comment Form -->
+                <form id="commentForm" method="post" class="space-y-2">
+                    {% csrf_token %}
+                    <div>
+                        {{ comment_form.content }}
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition">
+                            Post Comment
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Column Modal -->
+<div id="addColumnModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="text-base font-bold text-slate-900">Add Column</h3>
+            <button onclick="document.getElementById('addColumnModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <form method="post" action="{% url 'column_create' project.id %}" class="p-6 space-y-4">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Column Name</label>
+                {{ column_form.name }}
+            </div>
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Color Theme</label>
+                {{ column_form.color }}
+            </div>
+            <div class="flex items-center justify-end space-x-2 pt-2">
+                <button type="button" onclick="document.getElementById('addColumnModal').classList.add('hidden')" class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs text-slate-600">Cancel</button>
+                <button type="submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold">Save Column</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Member Modal -->
+{% if project.owner == user %}
+<div id="addMemberModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full shadow-2xl border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h3 class="text-base font-bold text-slate-900">Add Team Member</h3>
+            <button onclick="document.getElementById('addMemberModal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <form method="post" action="{% url 'project_add_member' project.id %}" class="p-6 space-y-4">
+            {% csrf_token %}
+            <div>
+                <label class="block text-xs font-semibold uppercase text-slate-600 mb-1">Select User</label>
+                <select name="user_id" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+                    <option value="">-- Choose User --</option>
+                    {% for u in available_users %}
+                    <option value="{{ u.id }}">{{ u.username }} ({{ u.email }})</option>
+                    {% endfor %}
+                </select>
+                {% if not available_users %}
+                <p class="text-[11px] text-slate-400 mt-1">No other registered users found.</p>
+                {% endif %}
+            </div>
+            <div class="flex items-center justify-end space-x-2 pt-2">
+                <button type="button" onclick="document.getElementById('addMemberModal').classList.add('hidden')" class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs text-slate-600">Cancel</button>
+                <button type="submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold">Add Member</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<!-- Activity Log Drawer -->
+<div id="activityDrawer" class="hidden fixed inset-y-0 right-0 z-40 w-80 bg-white border-l border-slate-200 shadow-2xl flex flex-col transform transition-transform">
+    <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <div class="flex items-center space-x-2">
+            <i data-lucide="history" class="w-4 h-4 text-indigo-600"></i>
+            <h3 class="font-bold text-sm text-slate-900">Project Activity</h3>
+        </div>
+        <button onclick="toggleActivityDrawer()" class="text-slate-400 hover:text-slate-600">
+            <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+    </div>
+    <div class="flex-1 overflow-y-auto p-4 space-y-3">
+        {% for act in activities %}
+        <div class="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs">
+            <p class="text-slate-800">
+                <strong class="text-indigo-600">{{ act.user.username|default:"System" }}</strong> {{ act.action }}
+            </p>
+            <span class="text-[10px] text-slate-400 mt-1 block">{{ act.created_at|timesince }} ago</span>
+        </div>
+        {% empty %}
+        <p class="text-xs text-slate-400 text-center py-8">No recent activity.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // CSRF helper
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const csrftoken = getCookie('csrftoken');
+
+    // Initialize SortableJS on each kanban column
+    document.querySelectorAll('.kanban-tasks-list').forEach(container => {
+        new Sortable(container, {
+            group: 'kanban-board',
+            animation: 200,
+            ghostClass: 'ghost-card',
+            chosenClass: 'chosen-card',
+            dragClass: 'opacity-80',
+            onEnd: function (evt) {
+                const taskId = evt.item.dataset.taskId;
+                const targetColumnId = evt.to.dataset.columnId;
+                const sourceColumnId = evt.from.dataset.columnId;
+
+                // Collect new task order in the destination column
+                const taskCards = evt.to.querySelectorAll('.task-card');
+                const taskIdsOrder = Array.from(taskCards).map(card => card.dataset.taskId);
+
+                // Update column badge counters in UI immediately
+                document.getElementById('col-count-' + targetColumnId).innerText = evt.to.children.length;
+                if (sourceColumnId !== targetColumnId) {
+                    document.getElementById('col-count-' + sourceColumnId).innerText = evt.from.children.length;
+                }
+
+                // Send async AJAX update to Django backend
+                fetch(`/api/tasks/${taskId}/move/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken
+                    },
+                    body: JSON.stringify({
+                        column_id: targetColumnId,
+                        task_ids_order: taskIdsOrder
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error("Task move failed:", data.error);
+                    }
+                })
+                .catch(err => console.error("Error updating task position:", err));
+            }
+        });
+    });
+
+    // Open Create Task modal with optional pre-selected column
+    function openCreateTaskModal(columnId = null) {
+        const modal = document.getElementById('createTaskModal');
+        const colSelect = modal.querySelector('select[name="column"]');
+        if (columnId && colSelect) {
+            colSelect.value = columnId;
+        }
+        modal.classList.remove('hidden');
+    }
+
+    // Open Task Detail & Comments Modal
+    function openTaskDetailModal(taskId) {
+        fetch(`/api/tasks/${taskId}/`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('modalTaskTitle').innerText = data.title;
+                document.getElementById('modalTaskDesc').innerText = data.description || 'No description provided.';
+                document.getElementById('modalTaskAssignee').innerText = data.assignee;
+                document.getElementById('modalTaskDueDate').innerText = data.due_date || 'None';
+                document.getElementById('modalTaskCreated').innerText = data.created_at;
+                document.getElementById('modalTaskColumn').innerText = data.column_name;
+
+                // Priority style
+                const pBadge = document.getElementById('modalTaskPriority');
+                pBadge.innerText = data.priority;
+                pBadge.className = 'text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full ';
+                if (data.priority === 'urgent') pBadge.className += 'bg-rose-100 text-rose-700';
+                else if (data.priority === 'high') pBadge.className += 'bg-amber-100 text-amber-700';
+                else if (data.priority === 'medium') pBadge.className += 'bg-blue-100 text-blue-700';
+                else pBadge.className += 'bg-slate-100 text-slate-700';
+
+                // Setup comment form action
+                document.getElementById('commentForm').action = `/tasks/${data.id}/comments/add/`;
+
+                // Render comments
+                const cList = document.getElementById('modalCommentsList');
+                cList.innerHTML = '';
+                if (data.comments.length === 0) {
+                    cList.innerHTML = '<p class="text-xs text-slate-400">No comments yet. Start the conversation!</p>';
+                } else {
+                    data.comments.forEach(c => {
+                        const div = document.createElement('div');
+                        div.className = 'p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs';
+                        div.innerHTML = `
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="font-bold text-slate-800">${c.author}</span>
+                                <span class="text-[10px] text-slate-400">${c.created_at}</span>
+                            </div>
+                            <p class="text-slate-600 whitespace-pre-wrap">${c.content}</p>
+                        `;
+                        cList.appendChild(div);
+                    });
+                }
+
+                document.getElementById('taskDetailModal').classList.remove('hidden');
+                lucide.createIcons();
+            });
+    }
+
+    // Toggle activity drawer
+    function toggleActivityDrawer() {
+        const drawer = document.getElementById('activityDrawer');
+        drawer.classList.toggle('hidden');
+    }
+</script>
+{% endblock %}
+
